@@ -1,0 +1,50 @@
+name: a11y-gate
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  a11y:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build payload.json
+        run: |
+          python - <<'PY'
+          import json, os
+          with open("index.html","r",encoding="utf-8") as f:
+            html = f.read()
+          payload = {
+            "repo": os.environ["GITHUB_REPOSITORY"],
+            "commit_sha": os.environ["GITHUB_SHA"],
+            "html": html
+          }
+          with open("payload.json","w",encoding="utf-8") as out:
+            json.dump(payload, out)
+          PY
+
+      - name: Call A11y Score API
+        id: score
+        run: |
+          resp=$(curl -sS --fail -X POST "${A11Y_API_BASE}/score" \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json)
+          echo "$resp"
+          echo "RESP=$resp" >> $GITHUB_OUTPUT
+        env:
+          A11Y_API_BASE: https://912zbihl02.execute-api.sa-east-1.amazonaws.com/default
+
+      - name: Enforce threshold
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          resp=json.loads(os.environ["RESP"])
+          if not resp.get("passed", False):
+            print("A11Y gate FAILED:", resp)
+            sys.exit(1)
+          print("A11Y gate PASSED:", resp)
+          PY
+        env:
+          RESP: ${{ steps.score.outputs.RESP }}
