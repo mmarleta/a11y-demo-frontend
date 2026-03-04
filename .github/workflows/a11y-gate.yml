@@ -10,23 +10,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read HTML file
-        id: html
+      - name: Build payload.json
         run: |
-          html=$(python - <<'PY'
-          import json
+          python - <<'PY'
+          import json, os
           with open("index.html","r",encoding="utf-8") as f:
-            print(json.dumps(f.read()))
+            html = f.read()
+          payload = {
+            "repo": os.environ["GITHUB_REPOSITORY"],
+            "commit_sha": os.environ["GITHUB_SHA"],
+            "html": html
+          }
+          with open("payload.json","w",encoding="utf-8") as out:
+            json.dump(payload, out)
           PY
-          )
-          echo "HTML_JSON=$html" >> $GITHUB_OUTPUT
 
       - name: Call A11y Score API
         id: score
         run: |
-          resp=$(curl -s -X POST "${A11Y_API_BASE}/score" \
+          resp=$(curl -sS --fail -X POST "${A11Y_API_BASE}/score" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"${GITHUB_REPOSITORY}\",\"commit_sha\":\"${GITHUB_SHA}\",\"html\":${{ steps.html.outputs.HTML_JSON }} }")
+            --data-binary @payload.json)
           echo "$resp"
           echo "RESP=$resp" >> $GITHUB_OUTPUT
         env:
